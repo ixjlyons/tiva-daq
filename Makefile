@@ -74,7 +74,6 @@ ${COMPILER}:
 #
 ${COMPILER}/${PROJ}.axf: ${COMPILER}/startup_${COMPILER}.o
 ${COMPILER}/${PROJ}.axf: ${COMPILER}/uartstdio.o
-${COMPILER}/${PROJ}.axf: ${COMPILER}/usb_bulk_structs.o
 ${COMPILER}/${PROJ}.axf: ${COMPILER}/${PROJ}.o
 ${COMPILER}/${PROJ}.axf: ${COMPILER}/ustdlib.o
 ${COMPILER}/${PROJ}.axf: ${ROOT}/usblib/${COMPILER}/libusb.a
