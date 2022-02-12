@@ -1,6 +1,7 @@
 """USB bulk device test script."""
 
 import usb
+import array
 import numpy as np
 
 
@@ -26,11 +27,12 @@ class TivaDaq(object):
         self.ep_out = self._find_ep(usb.util.ENDPOINT_OUT)
 
         self.read_size = self.ep_in.wMaxPacketSize
+        self.buf = array.array('f', b'\x00'*self.read_size)
 
     def read(self, msg):
         self.ep_out.write(msg)
-        rx = self.ep_in.read(self.read_size)
-        return np.frombuffer(rx, dtype=np.float32)
+        rx = self.ep_in.read(self.buf)
+        return np.frombuffer(self.buf, dtype=np.float32)
 
     def _find_ep(self, io):
         def match(ep):

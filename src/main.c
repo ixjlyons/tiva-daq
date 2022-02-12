@@ -37,13 +37,15 @@
 #include "driverlib/timer.h"
 #include "driverlib/uart.h"
 #include "driverlib/rom.h"
+#include "driverlib/timer.h"
 #include "usblib/usblib.h"
 #include "usblib/usb-ids.h"
 #include "usblib/device/usbdevice.h"
 #include "usblib/device/usbdbulk.h"
 #include "utils/uartstdio.h"
 #include "utils/ustdlib.h"
-#include "usb_bulk_structs.h"
+
+#include "usb_structs.h"
 
 // system tick rate
 #define SYSTICKS_PER_SECOND 100
@@ -63,6 +65,8 @@ volatile uint32_t g_rx_count = 0;
 // global flag indicating that a USB configuration has been set
 volatile bool g_usb_configured = false;
 
+volatile bool g_timer_enabled = false;
+volatile uint8_t g_timer_event = 0;
 
 #ifdef DEBUG
 // map all debug print calls to UARTprintf in debug builds.
@@ -99,7 +103,7 @@ void SysTickIntHandler(void) {
 //
 // \return Returns the number of bytes of data processed.
 //*****************************************************************************
-static uint32_t EchoNewDataToHost(tUSBDBulkDevice *device, uint8_t *data, uint32_t nbytes) {
+static uint32_t parse_command(tUSBDBulkDevice *device, uint8_t *data, uint32_t nbytes) {
     uint32_t idx_loop;
     uint32_t space;
     uint32_t count;
@@ -123,6 +127,16 @@ static uint32_t EchoNewDataToHost(tUSBDBulkDevice *device, uint8_t *data, uint32
     g_rx_count += nbytes;
 
     DEBUG_PRINT("Received %d bytes\n", nbytes);
+
+    if (g_timer_enabled) {
+        UARTprintf("disabling timer\n");
+        TimerDisable(TIMER0_BASE, TIMER_A);
+    }
+    else {
+        UARTprintf("enabling timer\n");
+        TimerEnable(TIMER0_BASE, TIMER_A);
+    }
+    g_timer_enabled = !g_timer_enabled;
 
     // Set up to process the characters by directly accessing the USB buffers.
     idx_read = (uint32_t)(data - g_usb_rx_buf);
@@ -152,30 +166,30 @@ static uint32_t EchoNewDataToHost(tUSBDBulkDevice *device, uint8_t *data, uint32
     }
     */
 
-    float samples[] = {
-        0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
-        8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
-    };
-    uint32_t bufsize = sizeof(samples);
-    uint8_t *ptr = (uint8_t*)&samples;
-    uint8_t i;
+    //float samples[] = {
+    //    0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+    //    8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+    //};
+    //uint32_t bufsize = sizeof(samples);
+    //uint8_t *ptr = (uint8_t*)&samples;
+    //uint8_t i;
 
-    for (i = 0; i < bufsize; i++) {
-        g_usb_tx_buf[idx_write] = ptr[i];
-        idx_write++;
-        idx_write = (idx_write == BULK_BUFFER_SIZE) ? 0 : idx_write;
-    }
+    //for (i = 0; i < bufsize; i++) {
+    //    g_usb_tx_buf[idx_write] = ptr[i];
+    //    idx_write++;
+    //    idx_write = (idx_write == BULK_BUFFER_SIZE) ? 0 : idx_write;
+    //}
 
-    // We've processed the data in place so now send the processed data
-    // back to the host.
-    USBBufferDataWritten(&g_tx_cb_buf, bufsize);
+    //// We've processed the data in place so now send the processed data
+    //// back to the host.
+    //USBBufferDataWritten(&g_tx_cb_buf, bufsize);
 
-    DEBUG_PRINT("Wrote %d bytes\n", bufsize);
+    //DEBUG_PRINT("Wrote %d bytes\n", bufsize);
 
     // We processed as much data as we can directly from the receive buffer so
     // we need to return the number of bytes to allow the lower layer to
     // update its read pointer appropriately.
-    return bufsize;
+    return 0; //bufsize;
 }
 
 //*****************************************************************************
@@ -239,10 +253,7 @@ uint32_t RxHandler(void *data, uint32_t event, uint32_t msgval, void *msgdata) {
 
         // A new packet has been received.
         case USB_EVENT_RX_AVAILABLE: {
-            // Get pointer to instance data from the callback data parameter
-            tUSBDBulkDevice *device = (tUSBDBulkDevice *)data;
-            // Read the new packet and echo it back to the host.
-            return EchoNewDataToHost(device, msgdata, msgval);
+            return parse_command((tUSBDBulkDevice*)data, msgdata, msgval);
         }
 
         // Ignore SUSPEND and RESUME for now.
@@ -258,25 +269,60 @@ uint32_t RxHandler(void *data, uint32_t event, uint32_t msgval, void *msgdata) {
     return 0;
 }
 
-void init_uart0(void) {
+void Timer0IntHandler(void) {
+    ROM_TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
+    g_timer_event = 1;
+}
+
+void config_uart0(void) {
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_UART0);
 
-    GPIOPinConfigure(GPIO_PA0_U0RX);
-    GPIOPinConfigure(GPIO_PA1_U0TX);
+    ROM_GPIOPinConfigure(GPIO_PA0_U0RX);
+    ROM_GPIOPinConfigure(GPIO_PA1_U0TX);
     ROM_GPIOPinTypeUART(GPIO_PORTA_BASE, GPIO_PIN_0 | GPIO_PIN_1);
 
-    UARTClockSourceSet(UART0_BASE, UART_CLOCK_PIOSC);
+    ROM_UARTClockSourceSet(UART0_BASE, UART_CLOCK_PIOSC);
 
     UARTStdioConfig(0, 115200, 16000000);
 }
 
-void init_led(void) {
+void config_led(void) {
     // Enable the GPIO port that is used for the on-board LED.
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
 
     // Enable the GPIO pins for the LED (PF2 & PF3).
     ROM_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2);
+}
+
+void config_timer0(void) {
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
+
+    TimerConfigure(TIMER0_BASE, TIMER_CFG_A_PERIODIC);
+    uint32_t cg = SysCtlClockGet();
+    UARTprintf("clock get: %d\n", cg);
+    TimerLoadSet(TIMER0_BASE, TIMER_A, SysCtlClockGet() / 2);
+
+    IntMasterEnable();
+
+    TimerIntEnable(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
+    IntEnable(INT_TIMER0A);
+}
+
+void config_usb(void) {
+    // Enable the GPIO peripheral used for USB, and configure the USB pins
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
+    ROM_GPIOPinTypeUSBAnalog(GPIO_PORTD_BASE, GPIO_PIN_4 | GPIO_PIN_5);
+
+    // Initialize the transmit and receive buffers.
+    USBBufferInit((tUSBBuffer *)&g_tx_cb_buf);
+    USBBufferInit((tUSBBuffer *)&g_rx_cb_buf);
+
+    // Set the USB stack mode to Device mode with no VBUS monitoring.
+    USBStackModeSet(0, eUSBModeForceDevice, 0);
+
+    // Pass our device info to the USB library and place the device on the bus
+    USBDBulkInit(0, (tUSBDBulkDevice*)&g_bulk_device);
 }
 
 
@@ -285,26 +331,20 @@ int main(void) {
     uint32_t tx_count = 0;
     uint32_t rx_count = 0;
 
-    // Enable lazy stacking for interrupt handlers. This allows floating-point
-    // instructions to be used within interrupt handlers, but at the expense of
-    // extra stack usage.
     ROM_FPULazyStackingEnable();
 
     // Set the clocking to run from the PLL at 50MHz
     ROM_SysCtlClockSet(SYSCTL_SYSDIV_4 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN |
                        SYSCTL_XTAL_16MHZ);
 
-    init_led();
-    init_uart0();
+    config_uart0();
+    config_led();
 
     UARTprintf("\033[2JStellaris USB bulk device example\n");
     UARTprintf("---------------------------------\n\n");
 
     g_usb_configured = false;
 
-    // Enable the GPIO peripheral used for USB, and configure the USB pins
-    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
-    ROM_GPIOPinTypeUSBAnalog(GPIO_PORTD_BASE, GPIO_PIN_4 | GPIO_PIN_5);
 
     // Enable the system tick.
     ROM_SysTickPeriodSet(ROM_SysCtlClockGet() / SYSTICKS_PER_SECOND);
@@ -314,40 +354,45 @@ int main(void) {
     // Tell the user what we are up to.
     UARTprintf("Configuring USB\n");
 
-    // Initialize the transmit and receive buffers.
-    USBBufferInit((tUSBBuffer *)&g_tx_cb_buf);
-    USBBufferInit((tUSBBuffer *)&g_rx_cb_buf);
-
-    // Set the USB stack mode to Device mode with VBUS monitoring.
-    USBStackModeSet(0, eUSBModeForceDevice, 0);
-
-    // Pass our device info to the USB library and place the device on the bus
-    USBDBulkInit(0, (tUSBDBulkDevice*)&g_bulk_device);
+    config_usb();
 
     UARTprintf("Waiting for host...\n");
+
+    config_timer0();
     while (1) {
-        // See if any data has been transferred.
-        if ((tx_count != g_tx_count) || (rx_count != g_rx_count)) {
-            if (tx_count != g_tx_count) {
-                // blink the green LED
-                GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, GPIO_PIN_3);
-                for(idx_loop = 0; idx_loop < 150000; idx_loop++) {}
-                GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, 0);
+        if (g_timer_event) {
+            g_timer_event = 0;
+            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, GPIO_PIN_3);
+            for(idx_loop = 0; idx_loop < 150000; idx_loop++) {}
 
-                tx_count = g_tx_count;
+
+            uint32_t idx_write;
+            tUSBRingBufObject tx_buf;
+
+            USBBufferInfoGet(&g_tx_cb_buf, &tx_buf);
+
+            idx_write = tx_buf.ui32WriteIndex;
+
+            float samples[] = {
+                0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+                8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+            };
+            uint32_t bufsize = sizeof(samples);
+            uint8_t *ptr = (uint8_t*)&samples;
+            uint8_t i;
+
+            for (i = 0; i < bufsize; i++) {
+                g_usb_tx_buf[idx_write] = ptr[i];
+                idx_write++;
+                idx_write = (idx_write == BULK_BUFFER_SIZE) ? 0 : idx_write;
             }
 
-            if (rx_count != g_rx_count) {
-                // blink the blue LED
-                GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, GPIO_PIN_2);
-                for(idx_loop = 0; idx_loop < 150000; idx_loop++) {}
-                GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 0);
+            // We've processed the data in place so now send the processed data
+            // back to the host.
+            USBBufferDataWritten(&g_tx_cb_buf, bufsize);
 
-                rx_count = g_rx_count;
-            }
 
-            // Update the display of bytes transferred.
-            UARTprintf("\rTx: %d  Rx: %d", tx_count, rx_count);
+            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, 0);
         }
     }
 }

@@ -71,6 +71,13 @@ Now you can run the test script::
 
     (.venv) $ python test.py
 
+TODO
+====
+
+- Use a control transfer to send a "start" command from the host (laptop)
+- Start a timer to periodically write data from the device
+- Enable an ADC channel to actually sample some data
+- Get some kind of turnkey SPI sensor and start collecting data from it
 
 .. _Stellaris LM4F120: http://www.ti.com/tool/ek-lm4f120xl
 .. _Tiva TM4C123G: http://www.ti.com/tool/ek-tm4c123gxl

@@ -2,7 +2,7 @@
 //
 // usb_bulk_structs.h - Data structures defining this bulk USB device.
 //
-// Copyright (c) 2012 Texas Instruments Incorporated.  All rights reserved.
+// Copyright (c) 2012-2017 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
 //
 // Texas Instruments (TI) is supplying this software for use solely and
@@ -18,7 +18,7 @@
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
 //
-// This is part of revision 9453 of the EK-LM4F120XL Firmware Package.
+// This is part of revision 2.1.4.178 of the EK-TM4C123GXL Firmware Package.
 //
 //*****************************************************************************
 
@@ -33,22 +33,19 @@
 #include "usblib/usb-ids.h"
 #include "usblib/device/usbdevice.h"
 #include "usblib/device/usbdbulk.h"
-#include "usb_bulk_structs.h"
 
 //*****************************************************************************
-//
 // The size of the transmit and receive buffers used. 256 is chosen pretty
 // much at random though the buffer should be at least twice the size of
 // a maximum-sized USB packet.
-//
 //*****************************************************************************
 #define BULK_BUFFER_SIZE 256
 
 extern unsigned long RxHandler(void *data, uint32_t event, uint32_t msgval, void *msgdata);
 extern unsigned long TxHandler(void *data, uint32_t event, uint32_t msgval, void *msgdata);
 
-//extern const tUSBBuffer g_tx_cb_buf;
-//extern const tUSBBuffer g_rx_cb_buf;
+extern tUSBBuffer g_tx_cb_buf;
+extern tUSBBuffer g_rx_cb_buf;
 extern tUSBDBulkDevice g_bulk_device;
 extern uint8_t g_usb_tx_buf[];
 extern uint8_t g_usb_rx_buf[];
@@ -211,9 +208,6 @@ const uint8_t * const string_descriptors[] = {
 // instance data. The buffer, in turn, has its callback set to the application
 // function and the callback data set to our bulk instance structure.
 //*****************************************************************************
-extern const tUSBBuffer g_tx_cb_buf;
-extern const tUSBBuffer g_rx_cb_buf;
-
 tUSBDBulkDevice g_bulk_device = {
     USB_VID_TI_1CBE,                               // vendor ID
     USB_PID_BULK,                                  // product ID
@@ -231,8 +225,7 @@ tUSBDBulkDevice g_bulk_device = {
 // Receive buffer (from the USB perspective).
 //*****************************************************************************
 uint8_t g_usb_rx_buf[BULK_BUFFER_SIZE];
-uint8_t rx_workspace_buf[USB_BUFFER_WORKSPACE_SIZE];
-const tUSBBuffer g_rx_cb_buf = {
+tUSBBuffer g_rx_cb_buf = {
     false,                           // This is a receive buffer.
     RxHandler,                       // pfnCallback
     (void *)&g_bulk_device,          // Callback data is our device pointer.
@@ -241,15 +234,13 @@ const tUSBBuffer g_rx_cb_buf = {
     (void *)&g_bulk_device,          // pvHandle
     g_usb_rx_buf,                    // pcBuffer
     BULK_BUFFER_SIZE,                // ulBufferSize
-    rx_workspace_buf                 // pvWorkspace
 };
 
 //*****************************************************************************
 // Transmit buffer (from the USB perspective).
 //*****************************************************************************
 uint8_t g_usb_tx_buf[BULK_BUFFER_SIZE];
-uint8_t tx_workspace_buf[USB_BUFFER_WORKSPACE_SIZE];
-const tUSBBuffer g_tx_cb_buf = {
+tUSBBuffer g_tx_cb_buf = {
     true,                            // This is a transmit buffer.
     TxHandler,                       // pfnCallback
     (void *)&g_bulk_device,          // Callback data is our device pointer.
@@ -258,6 +249,6 @@ const tUSBBuffer g_tx_cb_buf = {
     (void *)&g_bulk_device,          // pvHandle
     g_usb_tx_buf,                    // pcBuffer
     BULK_BUFFER_SIZE,                // ulBufferSize
-    tx_workspace_buf                 // pvWorkspace
 };
+
 #endif
